@@ -1,101 +1,93 @@
 /*
  * probe.js — TizenBrew serviceFile.
  *
- * Kører som Node.js på TV'et, hvis TizenBrew understøtter serviceFile
- * på Tizen 3.0. Skriver udelukkende en rapport til et kendt sti i
- * det skrivbare sdk_tools-område. Ændrer intet i systemet.
+ * TV'et kan kun modtage filer via sdb (filesync_support:push), ikke
+ * sende dem tilbage. Derfor POSTer vi rapporten til værten i stedet.
  *
- * Aflæs med:  sdb pull /home/owner/share/tmp/sdk_tools/probe.txt
+ * Ændrer intet på TV'et. Læser kun.
  */
 
-var fs = require('fs');
 var os = require('os');
+var http = require('http');
 
-var OUT = '/home/owner/share/tmp/sdk_tools/probe.txt';
+var HOST = '192.168.1.20';
+var PORT = 8099;
+var PATH = '/probe';
+
 var lines = [];
-
-function add(k, v) {
-  lines.push(k + ': ' + v);
-}
+function add(k, v) { lines.push(k + ': ' + v); }
 
 add('=== TizenBrew serviceFile probe ===', '');
 add('tid', new Date().toISOString());
 
-try {
-  var p = process;
-  add('node', (p.version || '?'));
-  add('pid', p.pid);
-  add('argv', JSON.stringify(p.argv));
-  add('cwd', (p.cwd ? p.cwd() : '?'));
-} catch (e) {
-  add('process-fejl', e.message);
-}
+var p = process;
+add('node', p.version || '?');
+add('pid', p.pid);
+add('argv', JSON.stringify(p.argv));
 
 try {
-  add('os.platform', os.platform());
-  add('os.arch', os.arch());
-  add('os.release', os.release());
-  add('os.hostname', os.hostname());
-  add('os.userInfo', JSON.stringify(os.userInfo()));
-} catch (e) {
-  add('os-fejl', e.message);
-}
+  add('platform', os.platform());
+  add('arch', os.arch());
+  add('release', os.release());
+  add('hostname', os.hostname());
+  add('userInfo', JSON.stringify(os.userInfo()));
+} catch (e) { add('os-fejl', e.message); }
 
-/* Hvilke moduler er tilgængelige? */
 ['fs', 'child_process', 'net', 'http', 'os', 'crypto'].forEach(function (m) {
-  try {
-    require(m);
-    add('require(' + m + ')', 'OK');
-  } catch (e) {
-    add('require(' + m + ')', 'FEJL ' + e.code);
-  }
+  try { require(m); add('require(' + m + ')', 'OK'); }
+  catch (e) { add('require(' + m + ')', 'FEJL ' + (e.code || e.message)); }
 });
 
-/* Kan vi skrive? Og hvor? */
 [
-  '/home/owner/share/tmp/sdk_tools',
-  '/opt/usr/home/owner',
-  '/home/owner/apps_rw',
-  '/tmp',
-  '/usr/share/org.tizen.tv.swu'
-].forEach(function (d) {
-  var ok = 'nej';
+  ['/home/owner/share', 'skrivbar?'],
+  ['/opt/usr/home/owner', ''],
+  ['/home/owner/apps_rw', ''],
+  ['/usr/share/org.tizen.tv.swu', ''],
+  ['/dev/ntksys', '']
+].forEach(function (pair) {
+  var d = pair[0];
+  var fs = require('fs');
+  var st;
   try {
-    fs.accessSync(d, fs.W_OK);
-    ok = 'skrivbar';
+    st = fs.statSync(d);
   } catch (e) {
-    try {
-      fs.accessSync(d, fs.R_OK);
-      ok = 'kun læsbar';
-    } catch (e2) {
-      ok = 'utilgængelig';
-    }
+    add('sti ' + d, 'findes ikke');
+    return;
   }
-  add('sti ' + d, ok);
+  var w = 'nej';
+  try { fs.accessSync(d, fs.W_OK); w = 'skrivbar'; } catch (e) { w = 'ej skrivbar'; }
+  add('sti ' + d, 'findes · ' + w + ' · mode ' + (st.mode || 0).toString(8));
 });
 
-/* Ligger SWU-passphrase-filen der? (vi forsøger ikke at dekryptere) */
 try {
+  var fs2 = require('fs');
   var f = '/usr/share/org.tizen.tv.swu/itemsAESPassphraseEncrypted.txt';
-  add('SWU-passphrase', fs.existsSync(f) ? ('findes, ' + fs.statSync(f).size + ' bytes') : 'findes ikke');
-} catch (e) {
-  add('SWU-passphrase', 'fejl ' + e.message);
-}
+  add('SWU-passphrase', fs2.existsSync(f)
+    ? ('findes · ' + fs2.statSync(f).size + ' bytes')
+    : 'findes ikke');
+} catch (e) { add('SWU-passphrase', 'fejl ' + e.message); }
 
-/* Kan vi køre et eksternt program? */
 try {
   var cp = require('child_process');
-  var out = cp.execSync('id', { encoding: 'utf8', timeout: 3000 });
-  add('child_process id', out.trim());
-} catch (e) {
-  add('child_process id', 'FEJL ' + (e.code || e.message));
+  add('child_process id', cp.execSync('id', { encoding: 'utf8', timeout: 3000 }).trim());
+} catch (e) { add('child_process id', 'FEJL ' + (e.code || e.message)); }
+
+var body = lines.join('\n');
+
+function post() {
+  var req = http.request({
+    host: HOST, port: PORT, path: PATH, method: 'POST',
+    headers: { 'Content-Type': 'text/plain', 'Content-Length': Buffer.byteLength(body) }
+  }, function (res) {
+    res.resume();
+  });
+  req.on('error', function () { /* værten er måske ikke oppe */ });
+  req.setTimeout(5000, function () { req.destroy(); });
+  req.write(body);
+  req.end();
 }
 
-try {
-  fs.writeFileSync(OUT, lines.join('\n') + '\n');
-} catch (e) {
-  /* sidste udvej: prøv hjemmemappen */
-  try {
-    fs.writeFileSync(os.homedir() + '/probe.txt', lines.join('\n') + '\n');
-  } catch (e2) { /* opgiv */ }
-}
+post();
+/* forsøg igen et par gange, hvis værten lige er startet */
+setTimeout(post, 4000);
+setTimeout(post, 12000);
