@@ -1,0 +1,10 @@
+{
+  "name": "samsung-tv-probe",
+  "version": "0.1.0",
+  "description": "TizenBrew modul der verificerer om serviceFile giver Node.js-koersel paa Tizen 3.0",
+  "packageType": "app",
+  "appName": "Probe",
+  "appPath": "index.html",
+  "serviceFile": "service/probe.js",
+  "license": "MIT"
+}

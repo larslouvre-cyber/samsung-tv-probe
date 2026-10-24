@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+<meta charset="utf-8">
+<title>Probe</title>
+<style>
+  html,body{margin:0;height:100%;background:#0b0e12;color:#e8eaed;
+            font-family:-apple-system,"Segoe UI",Roboto,sans-serif}
+  #w{position:absolute;left:50%;top:50%;width:1920px;height:1080px;
+     transform:translate(-50%,-50%) scale(1);transform-origin:50% 50%;padding:90px}
+  h1{font-size:44px;font-weight:700;letter-spacing:4px;margin:0 0 20px}
+  p{font-size:22px;color:#8a949e;line-height:1.6;margin:0 0 14px}
+  code{color:#5ee07a;font-size:20px}
+</style>
+</head>
+<body>
+<div id="w">
+  <h1>PROBE</h1>
+  <p>TizenBrew serviceFile-test. Servicen skriver en rapport til TV'et.</p>
+  <p>Aflæs den fra din Mac:</p>
+  <code>sdb pull /home/owner/share/tmp/sdk_tools/probe.txt</code>
+  <p style="margin-top:40px">Hvis filen findes, virker <b>vilkårlig Node.js-kodekørsel</b> på dette TV.</p>
+  <p id="s" style="margin-top:30px;color:#414a54">modul indlæst</p>
+</div>
+<script>
+  var s = document.getElementById('s');
+  if (window.tizen && tizen.application) {
+    s.textContent = 'Tizen-API tilgængeligt · app-id ' +
+      (tizen.application.getCurrentApplication().appId || '?');
+  } else {
+    s.textContent = 'Ingen Tizen-API (kører ikke på TV)';
+  }
+  var f = function () {
+    var k = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    document.getElementById('w').style.transform =
+      'translate(-50%,-50%) scale(' + k + ')';
+  };
+  f();
+  window.addEventListener('resize', f);
+</script>
+</body>
+</html>
